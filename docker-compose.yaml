@@ -1,0 +1,89 @@
+version: '3'
+
+networks:
+  discourse-net:
+
+services:
+  mailhog:
+    image: mailhog/mailhog:latest
+    networks:
+      - discourse-net
+    ports:
+      - 8025:8025
+
+  postgres:
+    image: postgres:9.6
+    networks:
+      - discourse-net
+    environment:
+      POSTGRES_PASSWORD: password
+      POSTGRES_USER: discourse
+      POSTGRES_DB: discourse
+
+  redis:
+    image: redis:alpine
+    networks:
+      - discourse-net
+
+  discourse:
+    image: discourse-bienert:latest
+    working_dir: /var/www/discourse
+    command: bash /var/www/discourse/entrypoint.sh
+    deploy:
+      restart_policy:
+        condition: on-failure
+    # ports:
+    #   - 3000:3000 # use the nginx entrypoint
+    networks:
+      - discourse-net
+    volumes:
+      - ./entrypoint.sh:/var/www/discourse/entrypoint.sh
+      - ./config/unicorn.rb:/var/www/discourse/config/unicorn.rb
+      - ./config/application.rb:/var/www/discourse/config/application.rb
+      - ./envs/production.rb:/var/www/discourse/config/environments/production.rb
+      - ./overrides/routes.rb:/var/www/discourse/config/routes.rb
+      - ./generated/public/assets:/var/www/discourse/public/assets
+      - ./generated/public/images:/var/www/discourse/public/images
+      - ./generated/public/uploads:/var/www/discourse/public/uploads
+      - ./generated/public/javascripts:/var/www/discourse/public/javascripts
+      - ./generated/public/svg-sprite:/var/www/discourse/public/svg-sprite
+    env_file:
+      - .env
+
+  discourse-sidekiq:
+    image: discourse-bienert:latest
+    working_dir: /var/www/discourse
+    # command: nami start --foreground discourse-sidekiq
+    command: bundle exec sidekiq
+    deploy:
+      restart_policy:
+        condition: on-failure
+    networks:
+      - discourse-net
+    volumes:
+      - ./entrypoint.sh:/var/www/discourse/entrypoint.sh
+      - ./config/unicorn.rb:/var/www/discourse/config/unicorn.rb
+      - ./config/application.rb:/var/www/discourse/config/application.rb
+      - ./envs/production.rb:/var/www/discourse/config/environments/production.rb
+      - ./overrides/routes.rb:/var/www/discourse/config/routes.rb
+      - ./generated/public/assets:/var/www/discourse/public/assets
+      - ./generated/public/images:/var/www/discourse/public/images
+      - ./generated/public/uploads:/var/www/discourse/public/uploads
+      - ./generated/public/javascripts:/var/www/discourse/public/javascripts
+      - ./generated/public/svg-sprite:/var/www/discourse/public/svg-sprite
+    env_file:
+      - .env
+
+  nginx:
+    image: fholzer/nginx-brotli
+    # command: /bin/sh -c "envsubst < /etc/nginx/conf.d/discourse.template.conf > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'" 
+    ports:
+      - 3001:80
+    depends_on:
+      - discourse
+    networks:
+      - discourse-net
+    volumes:
+      - ./config/nginx.application.conf:/etc/nginx/conf.d/default.conf
+      - ./generated/public:/var/www/discourse/public
+      - ./generated/nginx/cache:/var/nginx/cache
